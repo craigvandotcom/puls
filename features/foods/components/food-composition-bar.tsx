@@ -1,10 +1,6 @@
 "use client";
 
-interface Ingredient {
-  name: string;
-  zone?: "green" | "yellow" | "red";
-  isOrganic?: boolean;
-}
+import { Ingredient } from "@/lib/types";
 
 interface FoodCompositionBarProps {
   ingredients: Ingredient[];
@@ -24,33 +20,39 @@ export function FoodCompositionBar({ ingredients }: FoodCompositionBarProps) {
   }
 
   // Use 'zone' property instead of 'healthCategory' to match our data structure
+  // Handle ingredients that might not have zone data properly set
   const greenCount = safeIngredients.filter(ing => ing.zone === "green").length;
   const yellowCount = safeIngredients.filter(
     ing => ing.zone === "yellow"
   ).length;
   const redCount = safeIngredients.filter(ing => ing.zone === "red").length;
+  const unzonedCount = safeIngredients.filter(ing => !ing.zone || !["green", "yellow", "red"].includes(ing.zone)).length;
   const analyzedCount = greenCount + yellowCount + redCount;
 
-  if (analyzedCount === 0) {
-    // No zone data, show default state
+  // If we have ingredients but no zone data, treat unzoned as yellow (default)
+  const effectiveYellowCount = yellowCount + unzonedCount;
+  const effectiveAnalyzedCount = greenCount + effectiveYellowCount + redCount;
+
+  if (effectiveAnalyzedCount === 0) {
+    // This should rarely happen since we should have ingredients
     return (
       <div className="h-3 w-full bg-gray-200 rounded-full overflow-hidden border border-gray-400">
         <div
-          className="h-full bg-yellow-300 w-full"
-          title="Unanalyzed ingredients"
+          className="h-full bg-gray-300 w-full"
+          title="No ingredients to analyze"
         ></div>
       </div>
     );
   }
 
-  const greenPercent = (greenCount / analyzedCount) * 100;
-  const yellowPercent = (yellowCount / analyzedCount) * 100;
-  const redPercent = (redCount / analyzedCount) * 100;
+  const greenPercent = (greenCount / effectiveAnalyzedCount) * 100;
+  const yellowPercent = (effectiveYellowCount / effectiveAnalyzedCount) * 100;
+  const redPercent = (redCount / effectiveAnalyzedCount) * 100;
 
   return (
     <div
       className="flex h-3 w-full rounded-full overflow-hidden border border-gray-400 bg-gray-200"
-      title={`Green: ${greenCount}, Yellow: ${yellowCount}, Red: ${redCount}`}
+      title={`Green: ${greenCount}, Yellow: ${effectiveYellowCount}${unzonedCount > 0 ? ` (${unzonedCount} unzoned)` : ''}, Red: ${redCount}`}
     >
       {greenPercent > 0 && (
         <div

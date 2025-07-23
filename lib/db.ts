@@ -555,3 +555,54 @@ export const resetDevUser = async (): Promise<void> => {
     console.error("Error resetting dev user:", error);
   }
 };
+
+// DATA MIGRATION UTILITIES
+
+/**
+ * Fixes food entries that have ingredients without proper zone data
+ * This is a one-time migration to handle legacy data
+ */
+export const migrateIngredientsZoneData = async (): Promise<{
+  totalFoods: number;
+  fixedFoods: number;
+  fixedIngredients: number;
+}> => {
+  try {
+    const allFoods = await getAllFoods();
+    let fixedFoods = 0;
+    let fixedIngredients = 0;
+
+    for (const food of allFoods) {
+      let foodNeedsUpdate = false;
+      const updatedIngredients = food.ingredients?.map(ingredient => {
+        // Check if ingredient is missing zone data or has invalid zone
+        if (!ingredient.zone || !["green", "yellow", "red"].includes(ingredient.zone)) {
+          fixedIngredients++;
+          foodNeedsUpdate = true;
+          return {
+            ...ingredient,
+            zone: "yellow" as const, // Default to yellow for unzoned ingredients
+            foodGroup: ingredient.foodGroup || "other" as const, // Ensure foodGroup is set
+          };
+        }
+        return ingredient;
+      }) || [];
+
+      if (foodNeedsUpdate) {
+        await updateFood(food.id, { ingredients: updatedIngredients });
+        fixedFoods++;
+      }
+    }
+
+    console.log(`🔧 Migration complete: Fixed ${fixedIngredients} ingredients in ${fixedFoods} foods out of ${allFoods.length} total foods`);
+    
+    return {
+      totalFoods: allFoods.length,
+      fixedFoods,
+      fixedIngredients,
+    };
+  } catch (error) {
+    console.error("Error during ingredient zone migration:", error);
+    throw error;
+  }
+};

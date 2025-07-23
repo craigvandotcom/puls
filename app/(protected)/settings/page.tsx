@@ -39,7 +39,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { exportAllData, importAllData, clearAllData, addFood } from "@/lib/db";
+import { exportAllData, importAllData, clearAllData, addFood, migrateIngredientsZoneData } from "@/lib/db";
 import { useAuth } from "@/features/auth/components/auth-provider";
 import { AuthGuard } from "@/features/auth/components/auth-guard";
 
@@ -48,6 +48,7 @@ function SettingsPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isAddingTest, setIsAddingTest] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
@@ -212,6 +213,27 @@ function SettingsPage() {
       });
     } finally {
       setIsAddingTest(false);
+    }
+  };
+
+  const handleMigrateZoneData = async () => {
+    setIsMigrating(true);
+    try {
+      const result = await migrateIngredientsZoneData();
+      
+      toast({
+        title: "Zone data migration complete",
+        description: `Fixed ${result.fixedIngredients} ingredients in ${result.fixedFoods} foods out of ${result.totalFoods} total foods.`,
+      });
+    } catch (error) {
+      console.error("Failed to migrate zone data:", error);
+      toast({
+        title: "Migration failed",
+        description: "There was an error migrating zone data.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsMigrating(false);
     }
   };
 
@@ -404,6 +426,24 @@ function SettingsPage() {
             <p className="text-sm text-gray-600">
               This will add a test meal with 2/3 organic ingredients to help you
               verify the organic tracking bars are working.
+            </p>
+            
+            <Button
+              onClick={handleMigrateZoneData}
+              disabled={isMigrating}
+              className="w-full"
+              variant="outline"
+            >
+              {isMigrating ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Info className="h-4 w-4 mr-2" />
+              )}
+              {isMigrating ? "Migrating..." : "Fix Zone Data"}
+            </Button>
+            <p className="text-sm text-gray-600">
+              This will fix any existing food entries that have ingredients without proper zone colors. 
+              Run this if zone bars are showing blank.
             </p>
           </CardContent>
         </Card>
