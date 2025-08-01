@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { User } from "@/lib/types";
-import { createClient } from "@/lib/supabase/client";
-import { getCurrentUser } from "@/lib/db";
-import { logger } from "@/lib/utils/logger";
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { User } from '@/lib/types';
+import { createClient } from '@/lib/supabase/client';
+import { getCurrentUser } from '@/lib/db';
+import { logger } from '@/lib/utils/logger';
 
 interface AuthContextType {
   user: User | null;
@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) throw error;
-      if (!data.user) throw new Error("Login failed");
+      if (!data.user) throw new Error('Login failed');
 
       // Get the user profile from our database
       const profile = await getCurrentUser();
@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(profile);
       }
     } catch (error) {
-      logger.error("Login error", error);
+      logger.error('Login error', error);
       throw error;
     }
   };
@@ -49,10 +49,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      
+
       setUser(null);
     } catch (error) {
-      logger.error("Logout error", error);
+      logger.error('Logout error', error);
       // Still clear the user state even if logout fails
       setUser(null);
     }
@@ -63,7 +63,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       // Check Supabase session
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
       if (!session) {
         setUser(null);
@@ -72,18 +74,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Get the user profile from our database
-      const profile = await getCurrentUser();
+      let profile = await getCurrentUser();
+      
+      // If no profile exists but we have a valid session, attempt to create one
+      if (!profile && session.user) {
+        logger.warn('Supabase session exists but no user profile found. Attempting to create profile...');
+        
+        // Retry logic for profile creation
+        let retries = 3;
+        while (retries > 0 && !profile) {
+          try {
+            // Create user profile as a fallback
+            const { error: profileError } = await supabase
+              .from('users')
+              .upsert({
+                id: session.user.id,
+                email: session.user.email || '',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .select()
+              .single();
+
+            if (!profileError) {
+              // Try to fetch the profile again
+              profile = await getCurrentUser();
+              if (profile) {
+                logger.info('Successfully created fallback user profile');
+                break;
+              }
+            }
+          } catch (retryError) {
+            logger.error(`Profile creation retry ${4 - retries} failed:`, retryError);
+          }
+          
+          retries--;
+          if (retries > 0) {
+            // Wait before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)));
+          }
+        }
+        
+        // If we still don't have a profile after retries, sign out
+        if (!profile) {
+          logger.error('Failed to create user profile after retries. Signing out.');
+          await supabase.auth.signOut();
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+      }
+      
       if (profile) {
         setUser(profile);
-      } else {
-        logger.warn("Supabase session exists but no user profile found");
-        // Sign out if we have a session but no profile
-        await supabase.auth.signOut();
-        setUser(null);
       }
     } catch (error) {
-      logger.error("Session check error", error);
-      
+      logger.error('Session check error', error);
       setUser(null);
     } finally {
       setIsLoading(false);
@@ -94,22 +140,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkSession();
 
     // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        logger.debug('Auth state changed', { event, hasSession: !!session });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      logger.debug('Auth state changed', { event, hasSession: !!session });
+
+      if (event === 'SIGNED_IN' && session) {
+        let profile = await getCurrentUser();
         
-        if (event === 'SIGNED_IN' && session) {
-          const profile = await getCurrentUser();
-          if (profile) {
-            setUser(profile);
+        // Apply same retry logic for auth state changes
+        if (!profile && session.user) {
+          logger.warn('Auth state SIGNED_IN but no profile found. Attempting to create profile...');
+          
+          let retries = 3;
+          while (retries > 0 && !profile) {
+            try {
+              const { error: profileError } = await supabase
+                .from('users')
+                .upsert({
+                  id: session.user.id,
+                  email: session.user.email || '',
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                })
+                .select()
+                .single();
+
+              if (!profileError) {
+                profile = await getCurrentUser();
+                if (profile) {
+                  logger.info('Successfully created fallback user profile on auth state change');
+                  break;
+                }
+              }
+            } catch (retryError) {
+              logger.error(`Profile creation retry ${4 - retries} failed on auth state change:`, retryError);
+            }
+            
+            retries--;
+            if (retries > 0) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)));
+            }
           }
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null);
         }
         
-        setIsLoading(false);
+        if (profile) {
+          setUser(profile);
+        } else {
+          logger.error('Failed to get/create user profile on SIGNED_IN event');
+          setUser(null);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
       }
-    );
+
+      setIsLoading(false);
+    });
 
     return () => {
       subscription.unsubscribe();
@@ -120,12 +206,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const interval = setInterval(async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setUser(null);
-      }
-    }, 5 * 60 * 1000); // 5 minutes
+    const interval = setInterval(
+      async () => {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session) {
+          setUser(null);
+        }
+      },
+      5 * 60 * 1000,
+    ); // 5 minutes
 
     return () => clearInterval(interval);
   }, [isAuthenticated]);
@@ -145,7 +236,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 }
