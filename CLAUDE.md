@@ -46,7 +46,8 @@ This is "Puls", a privacy-first health tracking Progressive Web App (PWA) built 
 
 **Development Commands:**
 
-- `pnpm test` - Run Jest unit/integration tests (fast feedback)
+- `pnpm test` - Run all Jest tests (unit + integration)
+- `pnpm test:unit` - Run core unit/integration tests (excludes problematic tests)
 - `pnpm test:watch` - Run Jest tests in watch mode during development
 - `pnpm test:coverage` - Run Jest tests with coverage report
 - `pnpm test:ci` - Run Jest tests optimized for CI environment

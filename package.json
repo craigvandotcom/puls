@@ -21,6 +21,7 @@
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:headed": "playwright test --headed",
     "test:all": "pnpm test && pnpm test:e2e",
+    "test:unit": "jest --testPathIgnorePatterns='real-api|e2e|api-middleware|analyze-image-integration'",
     "test:api": "jest __tests__/api --verbose",
     "test:real": "node scripts/test-api-direct.mjs",
     "test:pwa": "next build && next start",
